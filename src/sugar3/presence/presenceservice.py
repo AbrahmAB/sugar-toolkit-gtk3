@@ -44,6 +44,7 @@ ACCOUNT_MANAGER_PATH = '/org/freedesktop/Telepathy/AccountManager'
 
 CONN_INTERFACE_ACTIVITY_PROPERTIES = 'org.laptop.Telepathy.ActivityProperties'
 
+PROJECT_BUNDLE_ID = 'org.sugarlabs.Project'
 
 class PresenceService(GObject.GObject):
     """Provides simplified access to the Telepathy framework to activities"""
@@ -194,6 +195,10 @@ class PresenceService(GObject.GObject):
 
         if 'color' not in properties:
             properties['color'] = activity.metadata.get('icon-color', None)
+
+        if properties['type'] == PROJECT_BUNDLE_ID:
+            properties['objects'] = activity.metadata.get('objects', None)
+            logging.debug('Objects to be shared %r' %properties['objects'])
 
         properties['private'] = private
 
