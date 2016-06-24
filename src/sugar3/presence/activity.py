@@ -92,7 +92,7 @@ class Activity(GObject.GObject):
             properties = {}
 
         GObject.GObject.__init__(self)
-
+        logging.debug('Activity.__init__ properties %r'%properties)
         self._account_path = account_path
         self.telepathy_conn = connection
         self.telepathy_text_chan = None
@@ -108,6 +108,8 @@ class Activity(GObject.GObject):
         self._tags = properties.get('tags', None)
         self._private = properties.get('private', True)
         self._joined = properties.get('joined', False)
+        self._objects = properties.get('objects', None).decode("utf-8")
+        logging.debug('objects here are %r'%self._objects)
         self._channel_self_handle = None
         self._text_channel_group_flags = 0
         self._buddies = {}
@@ -118,6 +120,7 @@ class Activity(GObject.GObject):
             self._start_tracking_properties()
 
     def _start_tracking_properties(self):
+        logging.debug('_start_tracking_properties')
         bus = dbus.SessionBus()
         self._get_properties_call = bus.call_async(
             self.telepathy_conn.requested_bus_name,
@@ -152,6 +155,7 @@ class Activity(GObject.GObject):
 
     def _update_properties(self, new_props):
         val = new_props.get('name', self._name)
+        logging.debug('_update_properties %r' %new_props)
         if isinstance(val, str) and val != self._name:
             self._name = val
             self.notify('name')
@@ -175,6 +179,10 @@ class Activity(GObject.GObject):
         if isinstance(val, str) and self._type is None:
             self._type = val
             self.notify('type')
+        val = new_props.get('objects', self._objects)
+        if isinstance(val, list) and self._objects is None:
+            self._objects = val
+            self.notify('objects')
 
     def object_path(self):
         """Get our dbus object path"""
@@ -203,12 +211,14 @@ class Activity(GObject.GObject):
             return self._tags
         elif pspec.name == 'private':
             return self._private
+        elif pspec.name == 'objects':
+            return self._objects
 
     def do_set_property(self, pspec, val):
         """Set a particular property in our property dictionary"""
         # FIXME: need an asynchronous API to set these properties,
         # particularly 'private'
-
+        logging.debug('do_set_property %r %r' %(pspec.name, val))
         if pspec.name == 'name':
             self._name = val
         elif pspec.name == 'color':
@@ -217,6 +227,8 @@ class Activity(GObject.GObject):
             self._tags = val
         elif pspec.name == 'private':
             self._private = val
+        elif pspec.name == 'objects':
+            self._objects = val
         else:
             raise ValueError('Unknown property %r' % pspec.name)
 
@@ -421,7 +433,7 @@ class Activity(GObject.GObject):
 
     def _publish_properties(self):
         properties = {}
-
+        logging.debug('_publish_properties objects %s %r'%(self._objects, self._objects.decode("utf-8")))
         if self._color is not None:
             properties['color'] = str(self._color)
         if self._name is not None:
@@ -430,6 +442,8 @@ class Activity(GObject.GObject):
             properties['type'] = self._type
         if self._tags is not None:
             properties['tags'] = self._tags
+        if self._objects is not None:
+            properties['objects'] = self._objects
         properties['private'] = self._private
 
         self.telepathy_conn.SetProperties(
@@ -771,7 +785,7 @@ class _JoinCommand(_BaseCommand):
                 # FIXME: else error, but only if we're creating the room?
         # FIXME: if props is nonempty, then we want to set props that aren't
         # supported here - raise an error?
-
+        logging.debug('props_to_set %r' %props_to_set)
         if props_to_set:
             self.text_channel[PROPERTIES_INTERFACE].SetProperties(
                 props_to_set, reply_handler=self.__set_properties_cb,
