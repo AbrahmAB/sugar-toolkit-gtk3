@@ -67,8 +67,10 @@ class ActivityService(dbus.service.Object):
         self._activity.props.active = active
 
     @dbus.service.method(_ACTIVITY_INTERFACE)
-    def InviteContact(self, account_path, contact_id):
-        self._activity.invite(account_path, contact_id)
+    def InviteContact(self, ips, port):
+        #self._activity.invite(account_path, contact_id)
+        #logging.debug('Bullshit %s'% (buddy))
+        self._activity.invite(ips, port)
 
     @dbus.service.method(_ACTIVITY_INTERFACE)
     def HandleViewSource(self):

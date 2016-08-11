@@ -54,6 +54,7 @@ will need for a real activity.
 # Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 # Boston, MA 02111-1307, USA.
 
+import zmq
 import gettext
 import logging
 import os
@@ -1002,7 +1003,7 @@ class Activity(Window, Gtk.Container):
                 logging.error('Cannot invite %s %s, no such buddy',
                               account_path, contact_id)
 
-    def invite(self, account_path, contact_id):
+    def invite(self, ips, port):
         '''
         Invite a buddy to join this Activity.
 
@@ -1014,13 +1015,35 @@ class Activity(Window, Gtk.Container):
             Calls self.share(True) to privately share the activity if it wasn't
             shared before.
         '''
-        self._invites_queue.append((account_path, contact_id))
+        for ip in ips:
+            logging.debug('ips are %s'  % (ips))
+            context = zmq.Context()
+            socket = context.socket(zmq.REQ)
+            logging.debug("Sending invite to"+str(ip)+" " +(port))
+            socket.connect("tcp://"+str(ip)+":"+str(port))
 
-        if (self.shared_activity is None
-                or not self.shared_activity.props.joined):
-            self.share(True)
-        else:
-            self._send_invites()
+            metadata= self.get_metadata()
+            invite_msg = {'type': 'invite',
+                          'title': metadata['title'],
+                          'color': metadata['icon-color'],
+                          'bundle_id': metadata['activity'] }
+            txt = json.dumps(invite_msg)
+            logging.debug("Sending "+txt)
+            socket.send(str(txt))
+
+            zmq_fd = socket.getsockopt(zmq.FD)
+            GObject.io_add_watch(zmq_fd,
+                         GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
+                         self.zmq_callback, socket)
+
+    def zmq_callback(self, queue, condition, socket):
+        print ('Yeah receivied reply on request :) ')
+
+        while socket.getsockopt(zmq.EVENTS) & zmq.POLLIN:
+            message = socket.recv()
+            print("Received reply [ %s ]" % (message))
+
+        return True
 
     def share(self, private=False):
         '''
