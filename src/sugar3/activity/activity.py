@@ -81,9 +81,11 @@ from telepathy.constants import CONNECTION_HANDLE_TYPE_ROOM
 
 from sugar3 import util
 from sugar3 import power
+from sugar3 import profile
 from sugar3.profile import get_nick_name, get_color
 from sugar3.presence import presenceservice
 from sugar3.activity.activityservice import ActivityService
+from sugar3.activity.activitycollab import ActivityCollab
 from sugar3.graphics import style
 from sugar3.graphics.window import Window
 from sugar3.graphics.alert import Alert
@@ -389,6 +391,7 @@ class Activity(Window, Gtk.Container):
 
         self._bus = ActivityService(self)
         self._owns_file = False
+        self._activity_collab = ActivityCollab()
 
         share_scope = SCOPE_PRIVATE
 
@@ -412,20 +415,24 @@ class Activity(Window, Gtk.Container):
 
         self.shared_activity = None
         self._join_id = None
-
+        logging.debug('handle got is %s' % handle.get_dict())
         if handle.object_id is None:
             logging.debug('Creating a jobject.')
             self._jobject = self._initialize_journal_object()
 
         if handle.invited:
-            wait_loop = GObject.MainLoop()
-            self._client_handler = _ClientHandler(
-                self.get_bundle_id(),
-                partial(self.__got_channel_cb, wait_loop))
+            logging.debug('Handle invite_prop is %s' %handle.invite_prop)
+            self._jobject.metadata['title'] = invite_prop['title']
+            self._jobject.metadata['icon-color'] = invite_prop['icon-color']
+            #self.join(invite_prop['socket'])
+            #wait_loop = GObject.MainLoop()
+            #self._client_handler = _ClientHandler(
+            #    self.get_bundle_id(),
+            #    partial(self.__got_channel_cb, wait_loop))
             # FIXME: The current API requires that self.shared_activity is set
             # before exiting from __init__, so we wait until we have got the
             # shared activity. http://bugs.sugarlabs.org/ticket/2168
-            wait_loop.run()
+            #wait_loop.run()
         else:
             pservice = presenceservice.get_instance()
             mesh_instance = pservice.get_activity(self._activity_id,
@@ -1008,12 +1015,8 @@ class Activity(Window, Gtk.Container):
         Invite a buddy to join this Activity.
 
         Args:
-            account_path
-            contact_id
-
-        Side Effects:
-            Calls self.share(True) to privately share the activity if it wasn't
-            shared before.
+            ips
+            port
         '''
         for ip in ips:
             logging.debug('ips are %s'  % (ips))
@@ -1023,10 +1026,20 @@ class Activity(Window, Gtk.Container):
             socket.connect("tcp://"+str(ip)+":"+str(port))
 
             metadata= self.get_metadata()
+            leader_key = self._activity_collab.props.leader_key
+            if leader_key is None:
+                self._activity_collab.props.leader_key = profile.get_profile().privkey_hash
+                self._activity_collab.props.leader_pub_port = self._activity_collab.props.pub_port
+                self._activity_collab.props.leader_rep_port = self._activity_collab.props.rep_port
+
             invite_msg = {'type': 'invite',
                           'title': metadata['title'],
-                          'color': metadata['icon-color'],
-                          'bundle_id': metadata['activity'] }
+                          'icon-color': metadata['icon-color'],
+                          'bundle_id': metadata['activity'],
+                          'activity_id': metadata['activity_id'],
+                          'pub-port': self._activity_collab.props.leader_pub_port,
+                          'rep-port': self._activity_collab.props.leader_rep_port,
+                          'leader_key': leader_key}
             txt = json.dumps(invite_msg)
             logging.debug("Sending "+txt)
             socket.send(str(txt))
@@ -1035,6 +1048,9 @@ class Activity(Window, Gtk.Container):
             GObject.io_add_watch(zmq_fd,
                          GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
                          self.zmq_callback, socket)
+
+    def join(self, socket):
+        socket.send("Wassup Bro?!!")
 
     def zmq_callback(self, queue, condition, socket):
         print ('Yeah receivied reply on request :) ')

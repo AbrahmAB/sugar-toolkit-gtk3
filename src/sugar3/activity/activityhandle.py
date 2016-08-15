@@ -48,11 +48,12 @@ class ActivityHandle(object):
     '''
 
     def __init__(self, activity_id=None, object_id=None, uri=None,
-                 invited=False):
+                 invited=False, invite_prop=None):
         self.activity_id = activity_id
         self.object_id = object_id
         self.uri = uri
         self.invited = invited
+        self.invite_prop = invite_prop
 
     def get_dict(self):
         '''Returns activity settings as a dictionary in format 
@@ -62,6 +63,8 @@ class ActivityHandle(object):
             result['object_id'] = self.object_id
         if self.uri:
             result['uri'] = self.uri
+        if self.invite_prop:
+            result['invite_prop'] = self.invite_prop
 
         return result
 
@@ -71,5 +74,6 @@ def create_from_dict(handle_dict):
     result = ActivityHandle(handle_dict['activity_id'],
                             object_id=handle_dict.get('object_id'),
                             uri=handle_dict.get('uri'),
-                            invited=handle_dict.get('invited'))
+                            invited=handle_dict.get('invited'),
+                            invite_prop=handle_dict.get('invite_prop'))
     return result

@@ -106,7 +106,7 @@ def get_environment(activity):
 
 
 def get_command(activity, activity_id=None, object_id=None, uri=None,
-                activity_invite=False):
+                activity_invite=False, invite_prop=None):
     if not activity_id:
         activity_id = create_activity_id()
 
@@ -120,6 +120,8 @@ def get_command(activity, activity_id=None, object_id=None, uri=None,
         command.extend(['-u', uri])
     if activity_invite:
         command.append('-i')
+    if invite_prop:
+        command.extend(['-p', invite_prop])
 
     # if the command is in $BUNDLE_ROOT/bin, execute the absolute path so there
     # is no need to mangle with the shell's PATH
@@ -225,7 +227,7 @@ class ActivityCreationHandler(GObject.GObject):
         (log_path, log_file) = open_log_file(self._bundle)
         command = get_command(self._bundle, self._handle.activity_id,
                               self._handle.object_id, self._handle.uri,
-                              self._handle.invited)
+                              self._handle.invited, str(self._handle.invite_prop))
 
         dev_null = file('/dev/null', 'r')
         child = subprocess.Popen([str(s) for s in command],
