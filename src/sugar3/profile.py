@@ -195,7 +195,7 @@ class Profile(object):
 
 def get_profile():
     global _profile
-
+    logging.debug('Testing profile %s' % _profile)
     if not _profile:
         path = os.path.join(env.get_profile_path(), 'config')
         _profile = Profile(path)

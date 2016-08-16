@@ -64,6 +64,7 @@ from functools import partial
 import StringIO
 import cairo
 import json
+import ast
 
 from gi.repository import Gtk
 from gi.repository import Gdk
@@ -392,7 +393,7 @@ class Activity(Window, Gtk.Container):
         self._bus = ActivityService(self)
         self._owns_file = False
         self._activity_collab = ActivityCollab()
-
+        self._invite_prop = None
         share_scope = SCOPE_PRIVATE
 
         if handle.object_id:
@@ -422,9 +423,10 @@ class Activity(Window, Gtk.Container):
 
         if handle.invited:
             logging.debug('Handle invite_prop is %s' %handle.invite_prop)
-            self._jobject.metadata['title'] = invite_prop['title']
-            self._jobject.metadata['icon-color'] = invite_prop['icon-color']
-            #self.join(invite_prop['socket'])
+            self._invite_prop = ast.literal_eval(handle.invite_prop)
+            self._jobject.metadata['title'] = self._invite_prop['title']
+            self._jobject.metadata['icon-color'] = self._invite_prop['icon-color']
+            self.join()
             #wait_loop = GObject.MainLoop()
             #self._client_handler = _ClientHandler(
             #    self.get_bundle_id(),
@@ -1031,15 +1033,16 @@ class Activity(Window, Gtk.Container):
                 self._activity_collab.props.leader_key = profile.get_profile().privkey_hash
                 self._activity_collab.props.leader_pub_port = self._activity_collab.props.pub_port
                 self._activity_collab.props.leader_rep_port = self._activity_collab.props.rep_port
+                self._activity_collab.is_leader = True
 
             invite_msg = {'type': 'invite',
                           'title': metadata['title'],
                           'icon-color': metadata['icon-color'],
                           'bundle_id': metadata['activity'],
                           'activity_id': metadata['activity_id'],
-                          'pub-port': self._activity_collab.props.leader_pub_port,
-                          'rep-port': self._activity_collab.props.leader_rep_port,
-                          'leader_key': leader_key}
+                          'pub_port': self._activity_collab.props.leader_pub_port,
+                          'rep_port': self._activity_collab.props.leader_rep_port,
+                          'leader_key': self._activity_collab.props.leader_key}
             txt = json.dumps(invite_msg)
             logging.debug("Sending "+txt)
             socket.send(str(txt))
@@ -1049,8 +1052,18 @@ class Activity(Window, Gtk.Container):
                          GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
                          self.zmq_callback, socket)
 
-    def join(self, socket):
-        socket.send("Wassup Bro?!!")
+    def join(self):
+        self._activity_collab.props.leader_key = self._invite_prop['leader_key']
+        self._activity_collab.props.leader_pub_port = self._invite_prop['pub_port']
+        self._activity_collab.props.leader_rep_port = self._invite_prop['rep_port']
+        self._activity_collab.props.leader_ips = self._invite_prop['leader_ips']
+        pub_port = self._activity_collab.props.pub_port
+        rep_port = self._activity_collab.props.rep_port
+        ips = self._invite_prop.pop('leader_ips')
+        self._invite_prop['ips'] = ips
+        self._activity_collab.add_participant(self._invite_prop['leader_key'],
+                                              self._invite_prop)
+        self._activity_collab.start_listening()
 
     def zmq_callback(self, queue, condition, socket):
         print ('Yeah receivied reply on request :) ')
@@ -1058,6 +1071,9 @@ class Activity(Window, Gtk.Container):
         while socket.getsockopt(zmq.EVENTS) & zmq.POLLIN:
             message = socket.recv()
             print("Received reply [ %s ]" % (message))
+            response = json.loads(message)
+            if response['response'] and response['activity_id'] == self._activity_id:
+                print 'New participant in %s' % self._activity_id
 
         return True
 
