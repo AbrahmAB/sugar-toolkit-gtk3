@@ -12,6 +12,9 @@ OFFLINE = 0
 AWAY = -1
 
 class ActivityCollab(GObject.GObject):
+    __gsignals__ = {
+        'received-text': (GObject.SignalFlags.RUN_FIRST, None, ([str])),
+    }
 
     def __init__(self):
         GObject.GObject.__init__(self)
@@ -53,8 +56,8 @@ class ActivityCollab(GObject.GObject):
             print ("Received request here %s" % observed)
             self._pub_socket.send(observed)
             received_req = json.loads(observed)
+            self.broadcast_msg(observed)
             if received_req['type'] == 'buddy-new':
-                self.broadcast_msg(observed)
                 msg = {}
                 msg['type'] = 'participants'
                 msg['buddy_key'] = self.my_key
@@ -67,6 +70,8 @@ class ActivityCollab(GObject.GObject):
                 received_req['ips'] = buddy.props.ips
                 received_req['presence'] = ONLINE
                 self.add_participant(buddy_key, received_req)
+            elif received_req['type'] == 'text':
+                self.emit('received-text',observed)
 
         return True
 
@@ -95,6 +100,9 @@ class ActivityCollab(GObject.GObject):
                     self._leader_key = key
                     self._leader_pub_port = value['pub_port']
                     self._leader_rep_port = value['rep_port']
+                    if self._leader_key == self.my_key:
+                        self.is_leader = True
+            print "New leader is"+str(self._leader_key)
         print "participants now are" + str(self._participants)
 
     def chk_participant_prop(self, discovery, buddy):
@@ -102,6 +110,8 @@ class ActivityCollab(GObject.GObject):
         if buddy_dict is None:
             return
         buddy_dict['ips'] = buddy.props.ips
+        #TODO: ONLINE or OFFLINE
+        buddy_dict['presence'] = ONLINE
         self._participants[buddy.props.key] = buddy_dict
         print "participants are: %s" % self._participants               
 
@@ -116,7 +126,8 @@ class ActivityCollab(GObject.GObject):
         req_msg = {'type': 'buddy-new',
                    'pub_port': self._pub_port,
                    'rep_port': self._rep_port,
-                   'buddy_key': self.my_key}
+                   'buddy_key': self.my_key,
+                   'presence': ONLINE}
         txt = json.dumps(req_msg)
         self._sub_sockets = context.socket(zmq.SUB)
         for ip in self._leader_ips:
@@ -136,7 +147,10 @@ class ActivityCollab(GObject.GObject):
             msg_rcv = socket.recv()
             print ("Received update is %s" % msg_rcv)
             update = json.loads(msg_rcv)
-            if not update['buddy_key'] == self.my_key:
+
+            if update.get('buddy_key',None) and update['buddy_key'] == self.my_key:
+                continue
+            else:
                 if update['type'] == 'buddy-new':
                     typ = update.pop('type')
                     buddy_rcv = self._buddy_discover.get_buddy_by_key(update['buddy_key'])
@@ -147,6 +161,9 @@ class ActivityCollab(GObject.GObject):
                     update['ips'] = buddy_rcv.props.ips
                     buddy_key = update.pop('buddy_key')
                     self.add_participant(buddy_key, update)
+                elif update['type'] == 'text':
+                    self.emit('received-text', json.dumps(update))
+
 
         return True
 

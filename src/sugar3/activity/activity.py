@@ -1061,6 +1061,7 @@ class Activity(Window, Gtk.Container):
         rep_port = self._activity_collab.props.rep_port
         ips = self._invite_prop.pop('leader_ips')
         self._invite_prop['ips'] = ips
+        self._invite_prop['presence'] = 1
         self._activity_collab.add_participant(self._invite_prop['leader_key'],
                                               self._invite_prop)
         self._activity_collab.start_listening()
