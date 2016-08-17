@@ -841,15 +841,14 @@ class Activity(Window, Gtk.Container):
         return preview_str.getvalue()
 
     def _get_buddies(self):
-        if self.shared_activity is not None:
-            buddies = {}
-            for buddy in self.shared_activity.get_joined_buddies():
-                if not buddy.props.owner:
-                    buddy_id = sha1(buddy.props.key).hexdigest()
-                    buddies[buddy_id] = [buddy.props.nick, buddy.props.color]
-            return buddies
-        else:
-            return {}
+        buddies = {}
+        if self._activity_collab:
+            participants = self._activity_collab.get_participants()
+            for key, buddy_prop in participants.items():
+                if not key == profile.get_profile().privkey_hash:
+                    print "got buddy here " +key + "color" + str(buddy_prop['color'])
+                    buddies[key] = [buddy_prop['nick'], buddy_prop['color']]
+        return buddies
 
     def save(self):
         '''
@@ -1034,6 +1033,7 @@ class Activity(Window, Gtk.Container):
                 self._activity_collab.props.leader_pub_port = self._activity_collab.props.pub_port
                 self._activity_collab.props.leader_rep_port = self._activity_collab.props.rep_port
                 self._activity_collab.is_leader = True
+                self._activity_collab.props.leader_nick = profile.get_nick_name()
 
             invite_msg = {'type': 'invite',
                           'title': metadata['title'],
@@ -1042,7 +1042,8 @@ class Activity(Window, Gtk.Container):
                           'activity_id': metadata['activity_id'],
                           'pub_port': self._activity_collab.props.leader_pub_port,
                           'rep_port': self._activity_collab.props.leader_rep_port,
-                          'leader_key': self._activity_collab.props.leader_key}
+                          'leader_key': self._activity_collab.props.leader_key,
+                          'leader-nick': self._activity_collab.props.leader_nick}
             txt = json.dumps(invite_msg)
             logging.debug("Sending "+txt)
             socket.send(str(txt))
@@ -1062,6 +1063,8 @@ class Activity(Window, Gtk.Container):
         ips = self._invite_prop.pop('leader_ips')
         self._invite_prop['ips'] = ips
         self._invite_prop['presence'] = 1
+        self._invite_prop['color'] = self._invite_prop['icon-color']
+        self._invite_prop['nick'] = self._invite_prop['leader-nick']
         self._activity_collab.add_participant(self._invite_prop['leader_key'],
                                               self._invite_prop)
         self._activity_collab.start_listening()

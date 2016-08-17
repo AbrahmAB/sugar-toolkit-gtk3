@@ -21,6 +21,7 @@ class ActivityCollab(GObject.GObject):
 
         self._participants = {}
         self._leader_key = None
+        self._leader_nick  = None
         self._leader_pub_port = None
         self._leader_rep_port = None
         self._leader_ips = []
@@ -39,22 +40,27 @@ class ActivityCollab(GObject.GObject):
         self._buddy_discover.connect('buddy-removed', self.remove_participant)
         self._buddy_discover.connect('buddy-added', self.chk_participant_prop)
 
-        my_dict = {'ips': None,
+        self.my_dict = {'ips': None,
                    'pub_port': self._pub_port,
                    'rep_port': self._rep_port,
-                   'presence': ONLINE }
-        self.add_participant(self.my_key, my_dict)
+                   'presence': ONLINE,
+                   'color': profile.get_color().to_string(),
+                   'nick': profile.get_nick_name() }
+        self.add_participant(self.my_key, self.my_dict)
 
         zmq_fd = self._rep_socket.getsockopt(zmq.FD)
         GObject.io_add_watch(zmq_fd,
                          GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
                          self.zmq_callback, self._rep_socket)
 
+    def get_participants(self):
+        return self._participants
+
     def zmq_callback(self, queue, condition, socket):
         while socket.getsockopt(zmq.EVENTS) & zmq.POLLIN:
+            print "Received req!"
             observed = socket.recv()
             print ("Received request here %s" % observed)
-            self._pub_socket.send(observed)
             received_req = json.loads(observed)
             self.broadcast_msg(observed)
             if received_req['type'] == 'buddy-new':
@@ -71,6 +77,10 @@ class ActivityCollab(GObject.GObject):
                 received_req['presence'] = ONLINE
                 self.add_participant(buddy_key, received_req)
             elif received_req['type'] == 'text':
+                print "Replying to text"
+                msg = {'type':'success'}
+                txt = json.dumps(msg)
+                socket.send(txt)
                 self.emit('received-text',observed)
 
         return True
@@ -83,7 +93,9 @@ class ActivityCollab(GObject.GObject):
         self._participants[key] = { 'ips': buddy_dict['ips'],
                                     'pub_port': buddy_dict['pub_port'],
                                     'rep_port': buddy_dict['rep_port'],
-                                    'presence': buddy_dict['presence'] }
+                                    'presence': buddy_dict['presence'],
+                                    'color': buddy_dict['color'],
+                                    'nick': buddy_dict['nick'] }
         print "participants are: %s" % self._participants
 
     def remove_participant(self, discovery, buddy):
@@ -100,9 +112,14 @@ class ActivityCollab(GObject.GObject):
                     self._leader_key = key
                     self._leader_pub_port = value['pub_port']
                     self._leader_rep_port = value['rep_port']
+                    print "New leader is"+str(self._leader_key)
                     if self._leader_key == self.my_key:
                         self.is_leader = True
-            print "New leader is"+str(self._leader_key)
+                    else:
+                        self.connect_to_leader()
+                    break
+            
+            
         print "participants now are" + str(self._participants)
 
     def chk_participant_prop(self, discovery, buddy):
@@ -110,25 +127,28 @@ class ActivityCollab(GObject.GObject):
         if buddy_dict is None:
             return
         buddy_dict['ips'] = buddy.props.ips
+        buddy_dict['nick'] = buddy.props.nick
         #TODO: ONLINE or OFFLINE
         buddy_dict['presence'] = ONLINE
         self._participants[buddy.props.key] = buddy_dict
-        print "participants are: %s" % self._participants               
+        print "participants after chk: %s" % self._participants               
 
     def start_listening(self):
-        leader_dict = {'ips': self._leader_ips,
-                        'pub_port': self._leader_pub_port,
-                        'rep_port': self._leader_rep_port,
-                        'presence': ONLINE }
-
-        context = zmq.Context()
-        self._req_socket = context.socket(zmq.REQ)
+        
+        
         req_msg = {'type': 'buddy-new',
                    'pub_port': self._pub_port,
                    'rep_port': self._rep_port,
                    'buddy_key': self.my_key,
-                   'presence': ONLINE}
+                   'presence': ONLINE,
+                   'color': self.my_dict['color'],
+                   'nick': self.my_dict['nick'] }
         txt = json.dumps(req_msg)
+        self.connect_to_leader()
+        self.send_msg_req(txt)
+
+    def connect_to_leader(self):
+        context = zmq.Context()
         self._sub_sockets = context.socket(zmq.SUB)
         for ip in self._leader_ips:
             self._sub_sockets.connect("tcp://"+str(ip)+":"+str(self._leader_pub_port))
@@ -138,8 +158,6 @@ class ActivityCollab(GObject.GObject):
             GObject.io_add_watch(zmq_fd,
                          GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
                          self.received_update, self._sub_sockets)
-
-        self.send_msg_req(txt)
 
     def received_update(self, queue, condition, socket):
         print ('Received update')
@@ -173,7 +191,9 @@ class ActivityCollab(GObject.GObject):
             msg_rcv = socket.recv()
             print ("Received reply is %s" % msg_rcv)
             update = json.loads(msg_rcv)
-            if update['buddy_key'] is not self.my_key:
+            if update['type'] == 'success':
+                print "Message received"
+            elif update['buddy_key'] is not self.my_key:
                 if update['type'] == 'participants':
                     typ = update.pop('type')
                     participants_rcv = update['participants']
@@ -183,14 +203,20 @@ class ActivityCollab(GObject.GObject):
                         print ("leader key is %s and key is %s" % (self._leader_key, key))
                         if not key == self._leader_key:
                             self.add_participant(key, value)
+            self.wait_send = 0
+        #socket.disconnect()
+
         return True
 
     def send_msg_req(self, txt):
+        msg = json.loads(txt)
+        msg['buddy_key'] = profile.get_profile().privkey_hash
+        txt = json.dumps(msg)
         for ip in self._leader_ips:
+            context = zmq.Context()
+            self._req_socket = context.socket(zmq.REQ)
             self._req_socket.connect("tcp://"+str(ip)+":"+str(self._leader_rep_port))
-            #multiple socket needed!!
             self._req_socket.send(txt)
-
             zmq_fd = self._req_socket.getsockopt(zmq.FD)
             GObject.io_add_watch(zmq_fd,
                          GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
@@ -198,7 +224,7 @@ class ActivityCollab(GObject.GObject):
 
     def get_socket_port_pair(self, socket_typ):
         context = zmq.Context()
-        socket = context.socket(    socket_typ)
+        socket = context.socket(socket_typ)
         port = socket.bind_to_random_port("tcp://*",
                                             min_port=6000,
                                             max_port=7000,
@@ -252,3 +278,11 @@ class ActivityCollab(GObject.GObject):
     leader_key = GObject.property(type=object, getter=get_leader_key,
         setter=set_leader_key)
 
+    def set_leader_nick(self, nick):
+        self._leader_nick = nick
+
+    def get_leader_nick(self):
+        return self._leader_nick
+
+    leader_nick = GObject.property(type=object, getter=get_leader_nick,
+        setter=set_leader_nick)
