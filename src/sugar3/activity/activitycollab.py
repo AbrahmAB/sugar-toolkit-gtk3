@@ -161,8 +161,9 @@ class ActivityCollab(GObject.GObject):
         print "participants after chk: %s" % self._participants
 
         if self.is_leader:
-            ips = buddy_dict['ips']
-            self.emit('send-update', str(ips), buddy.props.port)
+            ips = [buddy_dict['ips']]
+            ports = [buddy.props.port]
+            self.emit('send-update', str(ips), str(ports))
 
     def start_listening(self):
         req_msg = {'type': 'buddy-new',
