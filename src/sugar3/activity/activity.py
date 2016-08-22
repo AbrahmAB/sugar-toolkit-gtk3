@@ -393,6 +393,7 @@ class Activity(Window, Gtk.Container):
         self._bus = ActivityService(self)
         self._owns_file = False
         self._activity_collab = ActivityCollab()
+        self._activity_collab.connect('send-update', self._send_update_cb)
         self._invite_prop = None
         share_scope = SCOPE_PRIVATE
 
@@ -1011,7 +1012,7 @@ class Activity(Window, Gtk.Container):
                 logging.error('Cannot invite %s %s, no such buddy',
                               account_path, contact_id)
 
-    def invite(self, ips, port):
+    def invite(self, ips, port, typ_msg='invite'):
         '''
         Invite a buddy to join this Activity.
 
@@ -1023,7 +1024,7 @@ class Activity(Window, Gtk.Container):
             logging.debug('ips are %s'  % (ips))
             context = zmq.Context()
             socket = context.socket(zmq.REQ)
-            logging.debug("Sending invite to"+str(ip)+" " +(port))
+            logging.debug("Sending "+str(typ_msg)+" to"+str(ip)+" " +(port))
             socket.connect("tcp://"+str(ip)+":"+str(port))
 
             metadata= self.get_metadata()
@@ -1035,7 +1036,7 @@ class Activity(Window, Gtk.Container):
                 self._activity_collab.is_leader = True
                 self._activity_collab.props.leader_nick = profile.get_nick_name()
 
-            invite_msg = {'type': 'invite',
+            invite_msg = {'type': typ_msg,
                           'title': metadata['title'],
                           'icon-color': metadata['icon-color'],
                           'bundle_id': metadata['activity'],
@@ -1044,6 +1045,7 @@ class Activity(Window, Gtk.Container):
                           'rep_port': self._activity_collab.props.leader_rep_port,
                           'leader_key': self._activity_collab.props.leader_key,
                           'leader-nick': self._activity_collab.props.leader_nick}
+
             txt = json.dumps(invite_msg)
             logging.debug("Sending "+txt)
             socket.send(str(txt))
@@ -1052,6 +1054,15 @@ class Activity(Window, Gtk.Container):
             GObject.io_add_watch(zmq_fd,
                          GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
                          self.zmq_callback, socket)
+
+    def _send_update_cb(self, collab, ips_str, ports_str):
+        logging.debug('Sending update to the user offline')
+        ip_list =  ast.literal_eval(ips_str)
+        ports =  ast.literal_eval(ports_str)
+        itr = 0
+        for ips in ip_list:
+            self.invite(ips, ports[itr], typ_msg='update')
+            itr = itr + 1
 
     def join(self):
         self._activity_collab.props.leader_key = self._invite_prop['leader_key']
@@ -1151,8 +1162,16 @@ class Activity(Window, Gtk.Container):
         return True
 
     def _complete_close(self):
-        self.destroy()
+        msg = { 'type': 'buddy-remove',
+                'presence': 0 }
+        txt = json.dumps(msg)
+        if self._activity_collab.is_leader:
+            self._activity_collab.broadcast_msg(txt)
+        else:
+            self._activity_collab.send_msg_req(txt)
 
+        self.destroy()
+        
         if self.shared_activity:
             self.shared_activity.leave()
 
