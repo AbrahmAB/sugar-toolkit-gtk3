@@ -394,6 +394,7 @@ class Activity(Window, Gtk.Container):
         self._owns_file = False
         self._activity_collab = ActivityCollab()
         self._activity_collab.connect('send-update', self._send_update_cb)
+        self._activity_collab.connect('leader-offline', self._leader_offline_send_cb)
         self._invite_prop = None
         share_scope = SCOPE_PRIVATE
 
@@ -1063,6 +1064,33 @@ class Activity(Window, Gtk.Container):
         for ips in ip_list:
             self.invite(ips, ports[itr], typ_msg='update')
             itr = itr + 1
+
+    def _leader_offline_send_cb(self,collab, txt, ips_str, ports_str):
+        ip_list =  ast.literal_eval(ips_str)
+        ports =  ast.literal_eval(ports_str)
+        itr = 0
+        for ips in ip_list:
+            for ip in ips:
+                port = ports[itr]
+                itr = itr + 1
+
+                context = zmq.Context()
+                socket = context.socket(zmq.REQ)
+                logging.debug("Sending "+str(txt))
+                socket.connect("tcp://"+str(ip)+":"+str(port))
+
+                metadata= self.get_metadata()
+                msg = json.loads(txt)
+                msg['activity_id'] = metadata['activity_id']
+                msg['type'] = 'leader_offline'
+                msg['leader_key'] = msg['buddy_key']
+                txt_send = json.dumps(msg)
+                socket.send(txt_send)
+
+                zmq_fd = socket.getsockopt(zmq.FD)
+                GObject.io_add_watch(zmq_fd,
+                                     GObject.IO_IN|GObject.IO_ERR|GObject.IO_HUP,
+                                     self.zmq_callback, socket)
 
     def join(self):
         self._activity_collab.props.leader_key = self._invite_prop['leader_key']

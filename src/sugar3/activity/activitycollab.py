@@ -15,6 +15,7 @@ class ActivityCollab(GObject.GObject):
     __gsignals__ = {
         'received-text': (GObject.SignalFlags.RUN_FIRST, None, ([str])),
         'send-update': (GObject.SignalFlags.RUN_FIRST, None,([str, str])),
+        'leader-offline': (GObject.SignalFlags.RUN_FIRST, None,([str, str, str]))
     }
 
     def __init__(self):
@@ -99,6 +100,15 @@ class ActivityCollab(GObject.GObject):
         msg = json.loads(txt)
         if msg['type'] == 'buddy-remove' and not msg.get('buddy_key', None):
             msg['buddy_key'] = profile.get_profile().privkey_hash
+            ips = []
+            ports = []
+            for key, value in self._participants.items():
+                if value['presence'] == OFFLINE:
+                    print "Sending updates of leader offline"
+                    buddy = self._buddy_discover.get_buddy_by_key(key)
+                    ips.append(buddy.props.ips)
+                    ports.append( buddy.props.port)
+            self.emit('leader-offline', json.dumps(msg), ips, ports)
         txt = json.dumps(msg)
         self._pub_socket.send(txt)
 
