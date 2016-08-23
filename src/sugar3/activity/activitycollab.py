@@ -135,13 +135,18 @@ class ActivityCollab(GObject.GObject):
                         for key, value in self._participants.items():
                             if value['presence'] == OFFLINE:
                                 print "Sending updates 2"
-                                buddy = self._buddy_discover.get_buddy_by_key(key)
                                 ips.append(buddy.props.ips)
                                 ports.append( buddy.props.port)
                         self.emit('send-update', str(ips), str(ports))
                     else:
                         self.connect_to_leader()
                     break
+        elif self._leader_key == self.my_key:
+            ips = []
+            ports  = []
+            ips.append(buddy.props.ips)
+            ports.append( buddy.props.port)
+            self.emit('send-update', str(ips), str(ports))
             
             
         print "participants now are" + str(self._participants)
@@ -160,7 +165,12 @@ class ActivityCollab(GObject.GObject):
         self._participants[buddy.props.key] = buddy_dict
         print "participants after chk: %s" % self._participants
 
-        if self.is_leader:
+        if self.is_leader or self._leader_key is None:
+            self.is_leader = True
+            self._leader_key = self.my_key
+            self._leader_pub_port = self._pub_port
+            self._leader_rep_port = self._rep_port
+            self._leader_nick = self.my_dict['nick']
             ips = [buddy_dict['ips']]
             ports = [buddy.props.port]
             self.emit('send-update', str(ips), str(ports))
